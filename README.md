@@ -8,7 +8,7 @@ The app includes a simulator. Use it to learn the workflow and verify the UI bef
 
 This is a standalone 64-bit Windows app. Python does not need to be installed.
 
-1. Click **[Download PaladinLaserController.exe](https://github.com/GauravTathed/Paladin-Laser-Controller/raw/refs/heads/main/dist/PaladinLaserController.exe)**.
+1. Click **[Download PaladinLaserController.exe](https://github.com/GauravTathed/Paladin-Laser-Controller/releases/latest/download/PaladinLaserController.exe)**.
 2. Save the file, then double-click `PaladinLaserController.exe`.
 3. For a safe first test, select **SIMULATOR**, leave the baud rate at **9600**, and click **Connect**.
 4. For the real controller, connect the RS-232 adapter, click **Refresh**, select its COM port, and click **Connect**.
