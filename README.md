@@ -1,4 +1,4 @@
-# Paladin Laser Controller
+# Paladin Laser Controller v1.2.0
 
 A desktop controller for the Coherent Paladin Scan modelocked laser system. It turns the Rev. AA manual's RS-232 command set into a monitored dashboard, guarded laser/shutter controls, guided diagnostics, a searchable command reference, and a raw terminal for unusual cases.
 
@@ -97,7 +97,7 @@ All commands are serialized in one worker thread so the UI stays responsive and 
 
 ## QuDit Lab door display
 
-Use [QuDit Lab door display v1.1.0](https://github.com/GauravTathed/DoorSignGUI/releases/tag/qudit-door-v1.1.0) or later on the Pi. In Paladin, enter `welcome-pi.local` or the Pi's IP address, SSH port `22`, and the Pi account username and password. Click **Connect to Pi**. The app verifies the Pi's host key before signing in. The password is cleared from the form and you enter it again when starting a new connection.
+Use [QuDit Lab door display v1.2.0](https://github.com/GauravTathed/DoorSignGUI/releases/tag/qudit-door-v1.2.0) or later on the Pi. In Paladin, enter `welcome-pi.local` or the Pi's IP address, SSH port `22`, and the Pi account username and password. Click **Connect to Pi**. The app verifies the Pi's host key before signing in. The password is cleared from the form and you enter it again when starting a new connection.
 
 The Pi and COM port connections have separate controls. The app publishes confirmed `?S` responses while both are connected. The door switches to automatic status on the first valid hardware reading, shows **DANGER** when the shutter is open, and shows **UNKNOWN** when readings expire.
 
