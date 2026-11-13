@@ -13,7 +13,7 @@ from tkinter import messagebox, scrolledtext, ttk
 from typing import Any, Callable
 
 from .commands import CommandSpec, command_risk, search_commands
-from .door_sign import DoorSign, verified_shutter
+from .door_sign import DoorSign, PI_HOST, verified_shutter
 from .protocol import ParsedResponse, ProtocolError, normalize_command, parse_fault_history, status_name
 from .sbr import SBR_CONDITIONS, SbrSnapshot, parse_sbr_all
 from .simulator import SimulatorTransport
@@ -346,6 +346,7 @@ class PaladinApp:
             font=("Segoe UI", 9),
         ).pack(side="left", padx=(16, 0))
 
+        self._build_door_link()
         self.notebook = ttk.Notebook(self.root)
         self.notebook.pack(fill="both", expand=True, padx=24, pady=(0, 20))
         self.dashboard = tk.Frame(self.notebook, bg=COLORS["page"])
@@ -363,6 +364,43 @@ class PaladinApp:
         self._build_sbr_manager()
         self._build_guide()
         self._build_terminal()
+
+    def _build_door_link(self) -> None:
+        panel = self._panel(self.root, padx=14, pady=9)
+        panel.pack(fill="x", padx=24, pady=(0, 12))
+        panel.columnconfigure(0, weight=2)
+        panel.columnconfigure(3, weight=2)
+        self.door_host = tk.StringVar(value=PI_HOST)
+        self.door_port = tk.StringVar(value="22")
+        self.door_user = tk.StringVar(value="pi")
+        self.door_password = tk.StringVar()
+        self.door_entries = []
+        for column, (title, variable, width, show) in enumerate((
+            ("Pi hostname or IP", self.door_host, 24, ""),
+            ("SSH port", self.door_port, 7, ""),
+            ("Username", self.door_user, 12, ""),
+            ("SSH password", self.door_password, 22, "•"),
+        )):
+            tk.Label(
+                panel, text=title, bg=COLORS["panel"], fg=COLORS["muted"],
+                font=("Segoe UI", 9), anchor="w",
+            ).grid(row=0, column=column, sticky="ew", padx=(0, 10))
+            entry = tk.Entry(
+                panel, textvariable=variable, width=width, show=show,
+                bg=COLORS["panel_2"], fg=COLORS["text"], insertbackground=COLORS["text"],
+                disabledbackground=COLORS["page"], disabledforeground=COLORS["muted"],
+                font=("Segoe UI", 10), relief="flat",
+            )
+            entry.grid(row=1, column=column, sticky="ew", padx=(0, 10), ipady=5)
+            self.door_entries.append(entry)
+        self.door_entries[-1].bind("<Return>", lambda _event: self._door_connection_action())
+        self.door_link_button = self._button(panel, "Connect to Pi", self._door_connection_action, "safe", width=16)
+        self.door_link_button.grid(row=0, column=4, rowspan=2, sticky="ns")
+        self.door_link_label = tk.Label(
+            panel, text="Door feed disconnected", bg=COLORS["panel"], fg=COLORS["muted"],
+            font=("Segoe UI", 9), anchor="w",
+        )
+        self.door_link_label.grid(row=2, column=0, columnspan=5, sticky="ew", pady=(5, 0))
 
     def _button(self, parent: tk.Misc, text: str, command: Callable[[], None], kind: str = "secondary", width: int = 12) -> tk.Button:
         palette = {
@@ -452,17 +490,6 @@ class PaladinApp:
             text="The physical EMBS loop and interlocks remain authoritative.",
             bg=COLORS["panel"], fg=COLORS["muted"], font=("Segoe UI", 8), wraplength=270, justify="left",
         ).pack(anchor="w", pady=(14, 0))
-        link = tk.Frame(shutter_panel, bg=COLORS["panel"])
-        link.pack(fill="x", pady=(8, 0))
-        self.door_link_label = tk.Label(
-            link, text="Awaiting shutter status" if self.door_sign.enabled else "Door link not set up",
-            bg=COLORS["panel"], fg=COLORS["muted"], font=("Segoe UI", 8), anchor="w",
-        )
-        self.door_link_label.pack(side="left", fill="x", expand=True)
-        self.door_link_button = self._button(link, "Test door link", self._check_door_link, width=12)
-        self.door_link_button.pack(side="right")
-        self.door_link_button.configure(state="normal" if self.door_sign.enabled else "disabled")
-
         power_panel = self._panel(controls)
         power_panel.grid(row=0, column=2, sticky="nsew", padx=(7, 0))
         self._section_title(power_panel, "Power setpoint", "The allowed wattage range depends on the laser model.")
@@ -710,24 +737,44 @@ class PaladinApp:
         self.session.drain_callbacks()
         result = self.door_sign.status()
         while result is not None:
-            kind, error = result
-            delivered = error is None
-            if kind == "probe":
-                message = "Pi reached (test only)" if delivered else "Could not reach the Pi"
-                self.door_link_button.configure(state="normal")
-            elif kind == "simulation":
-                message = "Simulator feed connected" if delivered else "Simulator feed disconnected"
+            kind, message = result
+            if kind == "connected":
+                self.door_link_button.configure(text="Disconnect Pi")
+                self.door_link_label.configure(text=message, fg=COLORS["green"])
             else:
-                message = "Shutter feed connected" if delivered else "Shutter feed disconnected"
-            self.door_link_label.configure(text=message, fg=COLORS["green"] if delivered else COLORS["amber"])
-            self._log("DOOR", message if delivered else f"{message}. {error}")
+                self._show_door_disconnected(message, color=COLORS["amber"])
+            self._log("DOOR", message)
             result = self.door_sign.status()
         self._session_after = self.root.after(30, self._drain_session_callbacks)
 
-    def _check_door_link(self) -> None:
-        self.door_link_button.configure(state="disabled")
-        self.door_link_label.configure(text="Checking the Pi…", fg=COLORS["muted"])
-        self.door_sign.check()
+    def _show_door_disconnected(self, message, *, color):
+        for entry in self.door_entries:
+            entry.configure(state="normal")
+        self.door_link_button.configure(text="Connect to Pi")
+        self.door_link_label.configure(text=message, fg=color)
+
+    def _door_connection_action(self) -> None:
+        if self.door_sign.session is not None:
+            self.door_sign.disconnect()
+            self._show_door_disconnected("Door feed disconnected", color=COLORS["muted"])
+            return
+        host, user = self.door_host.get().strip(), self.door_user.get().strip()
+        password = self.door_password.get()
+        try:
+            port = int(self.door_port.get())
+            if not host or not user or not password or not 1 <= port <= 65535:
+                raise ValueError
+        except ValueError:
+            self.door_link_label.configure(
+                text="Enter the Pi address, SSH port, username, and password.", fg=COLORS["amber"],
+            )
+            return
+        self.door_password.set("")
+        for entry in self.door_entries:
+            entry.configure(state="disabled")
+        self.door_link_button.configure(text="Cancel")
+        self.door_link_label.configure(text=f"Connecting to {host}…", fg=COLORS["muted"])
+        self.door_sign.connect(host, port, user, password)
 
     def _connect_clicked(self) -> None:
         if self.connected:
@@ -1476,6 +1523,7 @@ class PaladinApp:
         if self._session_after:
             self.root.after_cancel(self._session_after)
         self.session.shutdown()
+        self.door_sign.disconnect()
         self.root.destroy()
 
 

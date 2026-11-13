@@ -16,7 +16,7 @@ try {
     $dist = Join-Path $projectRoot 'dist'
     $exe = Join-Path $dist 'PaladinLaserController.exe'
     $bundle = Join-Path $dist 'Paladin-Door-Feed-Windows.zip'
-    Compress-Archive -LiteralPath $exe, (Join-Path $projectRoot 'setup-door-feed.ps1') -DestinationPath $bundle -Force
+    Compress-Archive -LiteralPath $exe -DestinationPath $bundle -Force
     Get-FileHash -LiteralPath $exe, $bundle -Algorithm SHA256 |
         ForEach-Object { "$($_.Hash.ToLowerInvariant())  $(Split-Path -Leaf $_.Path)" } |
         Set-Content -LiteralPath (Join-Path $dist 'SHA256SUMS.txt') -Encoding ascii
