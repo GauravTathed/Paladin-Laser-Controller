@@ -13,6 +13,7 @@ from tkinter import messagebox, scrolledtext, ttk
 from typing import Any, Callable
 
 from .commands import CommandSpec, command_risk, search_commands
+from .door_sign import DoorSign, verified_shutter
 from .protocol import ParsedResponse, ProtocolError, normalize_command, parse_fault_history, status_name
 from .sbr import SBR_CONDITIONS, SbrSnapshot, parse_sbr_all
 from .simulator import SimulatorTransport
@@ -52,7 +53,8 @@ class _WorkItem:
 class DeviceSession:
     """Serializes all I/O in a worker thread and dispatches results to Tk."""
 
-    def __init__(self):
+    def __init__(self, report_shutter: Callable[[str], None] = lambda _reading: None):
+        self.report_shutter = report_shutter
         self._queue: queue.PriorityQueue[_WorkItem] = queue.PriorityQueue()
         self._results: queue.Queue[tuple[ResultCallback, Any | None, Exception | None]] = queue.Queue()
         self._counter = itertools.count()
@@ -69,12 +71,17 @@ class DeviceSession:
     def _submit(self, action: Callable[[], Any], callback: ResultCallback, priority: int) -> None:
         self._queue.put(_WorkItem(priority, next(self._counter), action, callback))
 
+    def _report_shutter(self, reading: str) -> None:
+        prefix = "sim-" if isinstance(self._transport, SimulatorTransport) else ""
+        self.report_shutter(prefix + reading)
+
     def connect(self, port: str, baud: int, callback: ResultCallback) -> None:
         self._generation += 1
         generation = self._generation
 
         def action() -> ParsedResponse:
             if self._transport:
+                self._report_shutter("unknown")
                 self._transport.close()
             transport: SerialTransport | SimulatorTransport
             transport = SimulatorTransport() if port == "SIMULATOR" else SerialTransport(port, baud)
@@ -99,6 +106,7 @@ class DeviceSession:
 
         def action() -> str:
             if self._transport:
+                self._report_shutter("unknown")
                 self._transport.close()
             self._transport = None
             return "Disconnected"
@@ -111,7 +119,19 @@ class DeviceSession:
         def action() -> ParsedResponse:
             if generation != self._generation or not self._transport:
                 raise RuntimeError("Not connected")
-            return self._transport.send(command)
+            physical = isinstance(self._transport, SerialTransport)
+            shutter_query = command.upper() == "?S"
+            if physical and command.upper() in ("S=0", "S=1", "L=0", "L=1", "RESET", "GOON", "~"):
+                self._report_shutter("unknown")
+            try:
+                response = self._transport.send(command)
+            except Exception:
+                if shutter_query:
+                    self._report_shutter("unknown")
+                raise
+            if shutter_query and generation == self._generation:
+                self._report_shutter(verified_shutter(response))
+            return response
 
         self._submit(action, callback, priority)
 
@@ -124,6 +144,7 @@ class DeviceSession:
             transport = self._transport
             if generation != self._generation or not transport:
                 raise RuntimeError("Not connected")
+            self._report_shutter("unknown")
             try:
                 return transport.send(command)
             finally:
@@ -160,6 +181,7 @@ class DeviceSession:
         def action() -> str:
             try:
                 if self._transport:
+                    self._report_shutter("unknown")
                     self._transport.close()
                 self._transport = None
                 return "Disconnected"
@@ -207,7 +229,8 @@ class PaladinApp:
         self.root.configure(bg=COLORS["page"])
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
-        self.session = DeviceSession()
+        self.door_sign = DoorSign()
+        self.session = DeviceSession(self.door_sign.report)
         self._session_after: str | None = self.root.after(30, self._drain_session_callbacks)
         self.connected = False
         self._poll_pending = False
@@ -429,6 +452,16 @@ class PaladinApp:
             text="The physical EMBS loop and interlocks remain authoritative.",
             bg=COLORS["panel"], fg=COLORS["muted"], font=("Segoe UI", 8), wraplength=270, justify="left",
         ).pack(anchor="w", pady=(14, 0))
+        link = tk.Frame(shutter_panel, bg=COLORS["panel"])
+        link.pack(fill="x", pady=(8, 0))
+        self.door_link_label = tk.Label(
+            link, text="Awaiting shutter status" if self.door_sign.enabled else "Door link not set up",
+            bg=COLORS["panel"], fg=COLORS["muted"], font=("Segoe UI", 8), anchor="w",
+        )
+        self.door_link_label.pack(side="left", fill="x", expand=True)
+        self.door_link_button = self._button(link, "Test door link", self._check_door_link, width=12)
+        self.door_link_button.pack(side="right")
+        self.door_link_button.configure(state="normal" if self.door_sign.enabled else "disabled")
 
         power_panel = self._panel(controls)
         power_panel.grid(row=0, column=2, sticky="nsew", padx=(7, 0))
@@ -675,7 +708,25 @@ class PaladinApp:
     def _drain_session_callbacks(self) -> None:
         self._session_after = None
         self.session.drain_callbacks()
+        result = self.door_sign.status()
+        while result is not None:
+            kind, delivered = result
+            if kind == "probe":
+                message = "Pi reached (test only)" if delivered else "Could not reach the Pi"
+                self.door_link_button.configure(state="normal")
+            elif kind == "simulation":
+                message = "Simulator feed connected" if delivered else "Simulator feed disconnected"
+            else:
+                message = "Shutter feed connected" if delivered else "Shutter feed disconnected"
+            self.door_link_label.configure(text=message, fg=COLORS["green"] if delivered else COLORS["amber"])
+            self._log("DOOR", message)
+            result = self.door_sign.status()
         self._session_after = self.root.after(30, self._drain_session_callbacks)
+
+    def _check_door_link(self) -> None:
+        self.door_link_button.configure(state="disabled")
+        self.door_link_label.configure(text="Checking the Pi…", fg=COLORS["muted"])
+        self.door_sign.check()
 
     def _connect_clicked(self) -> None:
         if self.connected:

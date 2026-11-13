@@ -8,7 +8,7 @@ The app includes a simulator. Use it to learn the workflow and verify the UI bef
 
 This is a standalone 64-bit Windows app. Python does not need to be installed.
 
-1. Click **[Download PaladinLaserController.exe](https://github.com/GauravTathed/Paladin-Laser-Controller/releases/latest/download/PaladinLaserController.exe)**.
+1. Download [PaladinLaserController.exe](https://github.com/GauravTathed/Paladin-Laser-Controller/releases/latest/download/PaladinLaserController.exe) or the [Windows ZIP with door feed setup](https://github.com/GauravTathed/Paladin-Laser-Controller/releases/latest/download/Paladin-Door-Feed-Windows.zip).
 2. Save the file, then double-click `PaladinLaserController.exe`.
 3. For a safe first test, select **SIMULATOR**, leave the baud rate at **9600**, and click **Connect**.
 4. For the real controller, connect the RS-232 adapter, click **Refresh**, select its COM port, and click **Connect**.
@@ -19,11 +19,7 @@ The executable is not digitally signed, so Windows SmartScreen may show an **Unk
 Get-FileHash .\PaladinLaserController.exe -Algorithm SHA256
 ```
 
-Expected SHA-256:
-
-```text
-E8FA44A3E1BD43D50861329BCC286CBA05ACE33CF7D05E26756927D5A65F9557
-```
+Compare the result with [SHA256SUMS.txt](https://github.com/GauravTathed/Paladin-Laser-Controller/releases/latest/download/SHA256SUMS.txt) from the same release.
 
 This build is a 64-bit Windows GUI executable with a declared minimum Windows version of 6.0, so it is compatible with 64-bit Windows 10 and Windows 11. The app was packaged on Windows as a single file with PyInstaller and includes its Python runtime and dependencies.
 
@@ -98,6 +94,14 @@ Run the executable first with `SIMULATOR`. Windows may assign a different COM nu
 - **Terminal** - one-command-at-a-time fallback. Automatic status traffic can be shown for troubleshooting.
 
 All commands are serialized in one worker thread so the UI stays responsive and the controller's 200 ms timing rule is respected. The app requests default prompt-off response mode (`>=0`) on connection and parses the documented `value:fault;` format, including optional echoed commands.
+
+## QuDit Lab door display
+
+Update the Pi using [QuDit Lab door display v1.1.0](https://github.com/GauravTathed/DoorSignGUI/releases/tag/qudit-door-v1.1.0). On the designated lab Windows PC, extract the Windows ZIP and run `powershell.exe -NoProfile -File .\setup-door-feed.ps1` from that folder using the same Windows account that runs Paladin. This requires the Windows OpenSSH Client and network access to `welcome-pi.local`. The setup verifies the Pi host key, generates a dedicated key on the lab PC, and registers only its public half using the Pi account. The key can send shutter status only. Keep the private key on the lab PC.
+
+Use **Test door link** in the Beam shutter panel to check SSH. Connect to the real COM port to publish confirmed `?S` responses. The door switches to automatic status on the first valid hardware reading, shows **DANGER** when the shutter is open, and shows **UNKNOWN** when readings expire. Keep the app connected to maintain the feed.
+
+Choose **SIMULATOR**, click **Start laser**, then use **Open shutter** and **Close shutter** to test the sign. The door labels these readings **SIM OPEN** or **SIM CLOSED**. The simulator can show a test notice while the dashboard reports the real shutter off in manual mode. Real warnings take priority.
 
 ## Tests
 
