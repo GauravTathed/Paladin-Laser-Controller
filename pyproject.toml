@@ -4,11 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "paladin-laser-controller"
-version = "1.1.0"
+version = "1.1.1"
 description = "Safety-conscious desktop controller for Coherent Paladin Scan lasers"
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = ["pyserial>=3.5,<4"]
+dependencies = ["pyserial>=3.5,<4", "paramiko>=3.5,<5"]
 
 [project.scripts]
 paladin-controller = "paladin_controller.app:main"

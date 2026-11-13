@@ -97,9 +97,13 @@ All commands are serialized in one worker thread so the UI stays responsive and 
 
 ## QuDit Lab door display
 
-Update the Pi using [QuDit Lab door display v1.1.0](https://github.com/GauravTathed/DoorSignGUI/releases/tag/qudit-door-v1.1.0). On the designated lab Windows PC, extract the Windows ZIP and run `powershell.exe -NoProfile -File .\setup-door-feed.ps1` from that folder using the same Windows account that runs Paladin. This requires the Windows OpenSSH Client and network access to `welcome-pi.local`. The setup verifies the Pi host key, generates a dedicated key on the lab PC, and registers only its public half using the Pi account. The key can send shutter status only. Keep the private key on the lab PC.
+Update the Pi using [QuDit Lab door display v1.1.0](https://github.com/GauravTathed/DoorSignGUI/releases/tag/qudit-door-v1.1.0). On the designated lab Windows PC, extract the Windows ZIP and run `powershell.exe -NoProfile -File .\setup-door-feed.ps1` from that folder using the same Windows account that runs Paladin. Setup requires the Windows OpenSSH Client and network access to `welcome-pi.local`. It verifies the Pi host key, generates a dedicated key on the lab PC, and registers only its public half using the Pi account. The key can send shutter status only. Keep the private key on the lab PC.
 
-Use **Test door link** in the Beam shutter panel to check SSH. Connect to the real COM port to publish confirmed `?S` responses. The door switches to automatic status on the first valid hardware reading, shows **DANGER** when the shutter is open, and shows **UNKNOWN** when readings expire. Keep the app connected to maintain the feed.
+If Windows blocks the downloaded script under its default execution policy, you can use `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\setup-door-feed.ps1` for that one run, subject to your organization's policy. If setup has already verified the Pi connection, the app reuses the existing key after an upgrade or reboot.
+
+If the lab PC cannot resolve `welcome-pi.local`, specify the Pi's verified IP address with `-PiAddress` when running setup. The app uses the address from `%LOCALAPPDATA%\QuDitPaladin\setup-ssh.conf` and continues to verify the stored host key for `welcome-pi.local`.
+
+Use **Test door link** in the Beam shutter panel to check SSH. If the test fails, open the terminal tab and look for the **DOOR** entry with the connection error. Connect to the real COM port to publish confirmed `?S` responses. The door switches to automatic status on the first valid hardware reading, shows **DANGER** when the shutter is open, and shows **UNKNOWN** when readings expire. Keep the app connected to maintain the feed.
 
 Choose **SIMULATOR**, click **Start laser**, then use **Open shutter** and **Close shutter** to test the sign. The door labels these readings **SIM OPEN** or **SIM CLOSED**. The simulator can show a test notice while the dashboard reports the real shutter off in manual mode. Real warnings take priority.
 

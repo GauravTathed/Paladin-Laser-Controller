@@ -1,3 +1,5 @@
+param([string]$PiAddress)
+
 $ErrorActionPreference = 'Stop'
 
 $config = Join-Path $env:LOCALAPPDATA 'QuDitPaladin'
@@ -6,11 +8,23 @@ $knownHosts = Join-Path $config 'known_hosts'
 $bootstrapConfig = Join-Path $config 'setup-ssh.conf'
 $ssh = (Get-Command ssh.exe).Source
 $keygen = (Get-Command ssh-keygen.exe).Source
+if (-not $PiAddress -and (Test-Path -LiteralPath $bootstrapConfig)) {
+    $existingAddress = Select-String -LiteralPath $bootstrapConfig -Pattern '^\s+HostName\s+(\S+)\s*$' | Select-Object -First 1
+    if ($existingAddress) { $PiAddress = $existingAddress.Matches[0].Groups[1].Value }
+}
+$addressLine = ''
+if ($PiAddress) {
+    $parsed = $null
+    if (-not [Net.IPAddress]::TryParse($PiAddress, [ref]$parsed)) { throw 'PiAddress must be an IP address.' }
+    $addressLine = "    HostName $parsed"
+}
 New-Item -ItemType Directory -Path $config -Force | Out-Null
 Set-Content -LiteralPath $knownHosts -Encoding ascii -Value 'welcome-pi.local ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA8oxp2Qx6i9tvsjCFYOdHvg6cp1mKdxTj08tl65qVZL'
 $knownHostsForSSH = $knownHosts.Replace('\', '/')
 $configuration = @"
 Host welcome-pi.local
+$addressLine
+    HostKeyAlias welcome-pi.local
     User pi
     StrictHostKeyChecking yes
     UserKnownHostsFile "$knownHostsForSSH"

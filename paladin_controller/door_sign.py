@@ -1,15 +1,20 @@
 """Publish verified shutter status to the QuDit sign without touching RS-232."""
 
-from pathlib import Path
+from contextlib import ExitStack
 import os
+from pathlib import Path
 from queue import Empty, Queue
-import subprocess
+import socket
 from threading import Thread
 import time
+
+import paramiko
 
 
 CONFIG = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "QuDitPaladin"
 MAX_QUEUED_AGE = 2
+SSH_TIMEOUT = 5
+PI_HOST = "welcome-pi.local"
 
 
 class DoorSign:
@@ -39,8 +44,8 @@ class DoorSign:
             simulated = reading.startswith("sim-")
             if time.monotonic() - sampled >= MAX_QUEUED_AGE:
                 reading = "sim-unknown" if simulated else "unknown"
-            delivered = self.send(reading)
-            result = ("simulation" if simulated else "reading", delivered)
+            error = self.send(reading, sampled_at=sampled)
+            result = ("simulation" if simulated else "reading", error)
             if last_result != result:
                 self.results.put(result)
                 last_result = result
@@ -49,23 +54,37 @@ class DoorSign:
         Thread(target=lambda: self.results.put(("probe", self.send("probe"))),
                daemon=True, name="qudit-door-link-test").start()
 
-    def send(self, message):
+    def send(self, message, *, sampled_at=None):
         try:
-            result = subprocess.run(
-                [
-                    "ssh.exe", "-F", "NUL", "-T", "-i", str(self.config / "shutter_ed25519"),
-                    "-o", "IdentitiesOnly=yes", "-o", "BatchMode=yes",
-                    "-o", "PasswordAuthentication=no", "-o", "ConnectTimeout=2",
-                    "-o", "StrictHostKeyChecking=yes",
-                    "-o", f'UserKnownHostsFile="{self.config / "known_hosts"}"',
-                    "pi@welcome-pi.local", "shutter-status",
-                ],
-                input=(message + "\n").encode("ascii"), capture_output=True,
-                creationflags=subprocess.CREATE_NO_WINDOW, timeout=2,
-            )
-        except (OSError, subprocess.TimeoutExpired):
-            return False
-        return result.returncode == 0 and result.stdout.strip() == b"OK"
+            with ExitStack() as stack:
+                address = PI_HOST
+                ssh_config = self.config / "setup-ssh.conf"
+                if ssh_config.is_file():
+                    config = paramiko.SSHConfig.from_path(str(ssh_config))
+                    address = config.lookup(PI_HOST).get("hostname", PI_HOST)
+                sock = None
+                if address != PI_HOST:
+                    sock = stack.enter_context(socket.create_connection((address, 22), timeout=SSH_TIMEOUT))
+                client = stack.enter_context(paramiko.SSHClient())
+                client.load_host_keys(str(self.config / "known_hosts"))
+                client.connect(
+                    PI_HOST, username="pi", key_filename=str(self.config / "shutter_ed25519"),
+                    allow_agent=False, look_for_keys=False, timeout=SSH_TIMEOUT,
+                    banner_timeout=SSH_TIMEOUT, auth_timeout=SSH_TIMEOUT, sock=sock,
+                )
+                stdin, stdout, _stderr = client.exec_command("shutter-status", timeout=SSH_TIMEOUT)
+                if sampled_at is not None and time.monotonic() - sampled_at >= MAX_QUEUED_AGE:
+                    message = "sim-unknown" if message.startswith("sim-") else "unknown"
+                stdin.write(message + "\n")
+                stdin.flush()
+                stdin.channel.shutdown_write()
+                if stdout.readline(16).strip() == "OK":
+                    return None
+                return "The Pi did not acknowledge the shutter message."
+        except paramiko.AuthenticationException:
+            return "The Pi rejected the lab PC's SSH key."
+        except (OSError, EOFError, paramiko.SSHException, ValueError) as error:
+            return str(error) or type(error).__name__
 
     def status(self):
         try:

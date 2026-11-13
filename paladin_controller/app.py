@@ -710,7 +710,8 @@ class PaladinApp:
         self.session.drain_callbacks()
         result = self.door_sign.status()
         while result is not None:
-            kind, delivered = result
+            kind, error = result
+            delivered = error is None
             if kind == "probe":
                 message = "Pi reached (test only)" if delivered else "Could not reach the Pi"
                 self.door_link_button.configure(state="normal")
@@ -719,7 +720,7 @@ class PaladinApp:
             else:
                 message = "Shutter feed connected" if delivered else "Shutter feed disconnected"
             self.door_link_label.configure(text=message, fg=COLORS["green"] if delivered else COLORS["amber"])
-            self._log("DOOR", message)
+            self._log("DOOR", message if delivered else f"{message}. {error}")
             result = self.door_sign.status()
         self._session_after = self.root.after(30, self._drain_session_callbacks)
 
